@@ -1,11 +1,13 @@
 import 'dart:io';
+import 'dart:math';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:window_manager/window_manager.dart';
 
-import 'Seekbar.dart';
+import 'seekbar.dart';
 
 Future<void> main() async {
   runApp(const MyApp());
@@ -65,7 +67,7 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> with WindowListener {
   late FilePickerResult result;
-  bool isUiVisible = false;
+  bool _isUiVisible = false;
   late List<PlatformFile> files = [];
   bool _isFullScreen = false;
 
@@ -81,6 +83,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
   void initState() {
     super.initState();
     windowManager.addListener(this);
+    ServicesBinding.instance.keyboard.addHandler(_onKey);
     Future.microtask(() async {
       // Create a [VideoController] instance from `package:media_kit_video`.
       // Pass the [handle] of the [Player] from `package:media_kit` to the [VideoController] constructor.
@@ -89,9 +92,71 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     });
   }
 
+  bool _onKey(KeyEvent event) {
+    final keyLabel = event.logicalKey.keyLabel;
+    if (event is KeyDownEvent) {
+      switch (keyLabel) {
+        case 'Arrow Left':
+          player.state.position.inSeconds > 10 ?
+            player.seek(Duration(seconds: player.state.position.inSeconds-10)) : player.seek(const Duration(seconds: 0));
+          break;
+        case 'Arrow Right':
+          if(player.state.position.inSeconds+10 < player.state.duration.inSeconds){
+            player.seek(Duration(seconds: player.state.position.inSeconds+10));
+          }
+          break;
+        case 'D':
+          player.state.isPlaying ? removePlayingItem() : null;
+          break;
+        case 'Delete':
+          player.state.isPlaying ? deletePlayingItem() : null;
+          break;
+        case 'Escape':
+          exit(0);
+        case 'F':
+          updateFullScreen();
+          break;
+        case 'H':
+          setState(() {
+            _isUiVisible = !_isUiVisible;
+          });
+          break;
+        case 'N':
+          player.next();
+          setState(() {});
+          break;
+        case 'O':
+          openAction();
+          break;
+        case 'P':
+          player.previous();
+          setState(() {});
+          break;
+        case 'R':
+          Random randomIndex = Random();
+          int next = randomIndex.nextInt(player.state.playlist.medias.length);
+          player.jump(next, open: true);
+          setState(() {});
+          break;
+        default:
+          int keyId = event.logicalKey.keyId;
+          switch (keyId) {
+            case 32: //Space pressed
+              player.playOrPause();
+              break;
+            default:
+              print('keyId: $keyId');
+              print('keyLabel: $keyLabel');
+          }
+      }
+    }
+    return false;
+  }
+
   @override
   void dispose() {
     windowManager.removeListener(this);
+    ServicesBinding.instance.keyboard.removeHandler(_onKey);
     Future.microtask(() async {
       debugPrint('Disposing [Player] and [VideoController]...');
       await controller?.dispose();
@@ -103,7 +168,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
   List<Widget> get playlist => [
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: uIControlsWidgets,
+          children: controlsWidgets,
         ),
         const Divider(height: 1.0, thickness: 1.0),
         for (int i = 0; i < files.length; i++)
@@ -162,19 +227,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
         floatingActionButton: FloatingActionButton.extended(
           tooltip: 'Open [File]',
           onPressed: () async {
-            final result = await FilePicker.platform.pickFiles(
-              allowMultiple: true,
-              type: FileType.video,
-            );
-            if (result?.files.isNotEmpty ?? false) {
-              setState(() {
-                files = result?.files.where((element) => true).toList()
-                    as List<PlatformFile>;
-              });
-              player.open(
-                Playlist(files.map((file) => Media(file.path!)).toList()),
-              );
-            }
+            await openAction();
           },
           icon: const Icon(Icons.file_open),
           label: const Text('Open'),
@@ -192,11 +245,11 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                       ),
                     ),
                     Visibility(
-                      visible: isUiVisible,
+                      visible: _isUiVisible,
                       child: const VerticalDivider(width: 1.0, thickness: 1.0),
                     ),
                     Visibility(
-                      visible: isUiVisible,
+                      visible: _isUiVisible,
                       child: Expanded(
                         flex: 1,
                         child: ListView(
@@ -222,13 +275,10 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
         ));
   }
 
-  List<Widget> get uIControlsWidgets => [
+  List<Widget> get controlsWidgets => [
         IconButton(
             onPressed: () async {
-              await windowManager.ensureInitialized();
-              _isFullScreen = !_isFullScreen;
-              await windowManager.setFullScreen(_isFullScreen);
-              await windowManager.show();
+              updateFullScreen();
             },
             icon: const Icon(
               Icons.fullscreen,
@@ -236,9 +286,10 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
               color: Colors.pink,
             )),
         IconButton(
-            onPressed: () async {
-              //todo: récupérer les éléments à masquer
-              print("Hide UI Controls");
+            onPressed: () {
+              setState(() {
+                _isUiVisible = !_isUiVisible;
+              });
             },
             icon: const Icon(
               Icons.tv,
@@ -250,7 +301,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
             icon: const Icon(Icons.delete, size: 18),
             onPressed: player.state.isPlaying
                 ? () {
-                    removeItemFromPlaylist();
+                    removePlayingItem();
                   }
                 : null),
         const SizedBox(width: 12),
@@ -258,20 +309,15 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
           icon: const Icon(Icons.delete_forever, size: 18),
           onPressed: player.state.isPlaying
               ? () {
-                  var pathName = files[player.state.playlist.index].path;
-                  if (pathName != null) {
-                    final file = File(pathName);
-                    file.delete().then((result) => {print("file deleted")});
-                    removeItemFromPlaylist();
-                  }
+                  deletePlayingItem();
                 }
               : null,
         ),
       ];
 
-  void removeItemFromPlaylist() {
+  void removePlayingItem() {
     setState(() {
-      files.removeAt(player.state.playlist.index!);
+      files.removeAt(player.state.playlist.index);
       player.open(Playlist(files.map((file) => Media(file.path!)).toList()),
           play: false);
       //todo: modifier plus tard pour jouer quand on supprime un élément
@@ -281,5 +327,42 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
   @override
   void onWindowEvent(String eventName) {
     print('[WindowManager] onWindowEvent: $eventName');
+  }
+
+  void updateFullScreen() {
+    windowManager.ensureInitialized().then((value) => {
+          windowManager.setFullScreen(!_isFullScreen).then((value) => {
+                windowManager.show().then((value) => {
+                      setState(() {
+                        _isFullScreen = !_isFullScreen;
+                      })
+                    })
+              })
+        });
+  }
+
+  void deletePlayingItem() {
+    var pathName = files[player.state.playlist.index].path;
+    if (pathName != null) {
+      final file = File(pathName);
+      file.delete().then((result) => {print("file deleted")});
+      removePlayingItem();
+    }
+  }
+
+  Future<void> openAction() async {
+    final result = await FilePicker.platform.pickFiles(
+      allowMultiple: true,
+      type: FileType.video,
+    );
+    if (result?.files.isNotEmpty ?? false) {
+      setState(() {
+        files = result?.files.where((element) => true).toList()
+            as List<PlatformFile>;
+      });
+      player.open(
+        Playlist(files.map((file) => Media(file.path!)).toList()),
+      );
+    }
   }
 }
