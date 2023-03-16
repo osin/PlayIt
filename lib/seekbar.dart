@@ -65,7 +65,7 @@ class _SeekBarState extends State<SeekBar> {
           icon: Icon(
             isPlaying ? Icons.pause : Icons.play_arrow,
           ),
-          color: Theme.of(context).primaryColor,
+          color: Theme.of(context).colorScheme.primary,
           iconSize: 36.0,
         ),
         const SizedBox(width: 24.0),
