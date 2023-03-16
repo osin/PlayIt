@@ -68,7 +68,6 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> with WindowListener {
   late FilePickerResult result;
   bool _isUiVisible = false;
-  late List<PlatformFile> files = [];
   bool _isFullScreen = false;
 
   // Create a [Player] instance from `package:media_kit`.
@@ -97,12 +96,16 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     if (event is KeyDownEvent) {
       switch (keyLabel) {
         case 'Arrow Left':
-          player.state.position.inSeconds > 10 ?
-            player.seek(Duration(seconds: player.state.position.inSeconds-10)) : player.seek(const Duration(seconds: 0));
+          player.state.position.inSeconds > 10
+              ? player
+                  .seek(Duration(seconds: player.state.position.inSeconds - 10))
+              : player.seek(const Duration(seconds: 0));
           break;
         case 'Arrow Right':
-          if(player.state.position.inSeconds+10 < player.state.duration.inSeconds){
-            player.seek(Duration(seconds: player.state.position.inSeconds+10));
+          if (player.state.position.inSeconds + 10 <
+              player.state.duration.inSeconds) {
+            player
+                .seek(Duration(seconds: player.state.position.inSeconds + 10));
           }
           break;
         case 'D':
@@ -171,14 +174,14 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
           children: controlsWidgets,
         ),
         const Divider(height: 1.0, thickness: 1.0),
-        for (int i = 0; i < files.length; i++)
+        for (int i = 0; i < player.state.playlist.medias.length; i++)
           ListTile(
             title: Text(
-              files[i].name,
+              player.state.playlist.medias[i].uri,
               style: TextStyle(
                   fontSize: 14.0,
                   color:
-                      player.state.isPlaying && player.state.playlist.index == i
+                      player.state.playlist.index == i
                           ? Colors.pinkAccent
                           : Colors.black),
               maxLines: 1,
@@ -204,7 +207,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
               ),
             ),
           ),
-          SeekBar(player: player),
+          Visibility(visible: _isUiVisible, child: SeekBar(player: player)),
         ],
       );
 
@@ -212,25 +215,22 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
   Widget build(BuildContext context) {
     final horizontal =
         MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
         appBar: AppBar(
           // Here we take the value from the MyHomePage object that was created by
           // the App.build method, and use it to set our appbar title.
           title: Text(widget.title),
         ),
-        floatingActionButton: FloatingActionButton.extended(
-          tooltip: 'Open [File]',
-          onPressed: () async {
-            await openAction();
-          },
-          icon: const Icon(Icons.file_open),
-          label: const Text('Open'),
+        floatingActionButton: Visibility(
+          visible: !_isUiVisible && player.state.playlist.medias.isEmpty,
+          child: FloatingActionButton.extended(
+            tooltip: 'Open [File]',
+            onPressed: () async {
+              await openAction();
+            },
+            icon: const Icon(Icons.folder_open),
+            label: const Text('Open'),
+          ),
         ), // This trailing comma makes auto-formatting nicer for build methods.
         body: SizedBox.expand(
           child: horizontal
@@ -278,6 +278,15 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
   List<Widget> get controlsWidgets => [
         IconButton(
             onPressed: () async {
+              await openAction();
+            },
+            icon: const Icon(
+              Icons.folder_open,
+              size: 18,
+              color: Colors.pink,
+            )),
+        IconButton(
+            onPressed: () async {
               updateFullScreen();
             },
             icon: const Icon(
@@ -316,12 +325,12 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       ];
 
   void removePlayingItem() {
-    setState(() {
-      files.removeAt(player.state.playlist.index);
-      player.open(Playlist(files.map((file) => Media(file.path!)).toList()),
-          play: false);
-      //todo: modifier plus tard pour jouer quand on supprime un élément
-    });
+      var currentIndexInPlaylist = player.state.playlist.index;
+      player.remove(player.state.playlist.index);
+      player.open(player.state.playlist, play: true);
+      player.jump(currentIndexInPlaylist, open: true);
+      player.play();
+      setState(() {});
   }
 
   @override
@@ -342,12 +351,11 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
   }
 
   void deletePlayingItem() {
-    var pathName = files[player.state.playlist.index].path;
-    if (pathName != null) {
-      final file = File(pathName);
-      file.delete().then((result) => {print("file deleted")});
-      removePlayingItem();
-    }
+    var pathName =
+        player.state.playlist.medias[player.state.playlist.index].uri;
+    final file = File(pathName);
+    file.delete().then((result) => {print("file deleted")});
+    removePlayingItem();
   }
 
   Future<void> openAction() async {
@@ -356,13 +364,12 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       type: FileType.video,
     );
     if (result?.files.isNotEmpty ?? false) {
-      setState(() {
-        files = result?.files.where((element) => true).toList()
+        var files = result?.files.where((element) => true).toList()
             as List<PlatformFile>;
-      });
       player.open(
         Playlist(files.map((file) => Media(file.path!)).toList()),
       );
     }
+    setState(() {});
   }
 }
