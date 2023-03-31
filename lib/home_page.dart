@@ -133,7 +133,7 @@ class _HomePageState extends State<HomePage> with WindowListener {
                   fontSize: 14.0,
                   color: player.state.playlist.index == i
                       ? Colors.pinkAccent
-                      : Colors.black),
+                      : Colors.white70),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
